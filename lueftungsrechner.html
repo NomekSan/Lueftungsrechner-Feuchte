@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Lüftungsrechner</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1419">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lüften">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1419;
+    color: #e6edf3;
+    margin: 0;
+    padding: 24px 16px;
+    display: flex;
+    justify-content: center;
+  }
+  .card {
+    width: 100%;
+    max-width: 480px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: #8b949e;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  .columns {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .col {
+    flex: 1;
+    background: #161b22;
+    border: 1px solid #2d333b;
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .col h2 {
+    font-size: 14px;
+    margin: 0 0 10px;
+    color: #79c0ff;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    color: #8b949e;
+    margin-bottom: 4px;
+    margin-top: 10px;
+  }
+  label:first-of-type { margin-top: 0; }
+  input {
+    width: 100%;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    color: #e6edf3;
+    padding: 8px 10px;
+    font-size: 15px;
+  }
+  input:focus {
+    outline: none;
+    border-color: #58a6ff;
+  }
+  .result {
+    background: #161b22;
+    border: 1px solid #2d333b;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .verdict {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .good { color: #3fb950; }
+  .bad { color: #f85149; }
+  .neutral { color: #d29922; }
+  .detail {
+    font-size: 13px;
+    color: #8b949e;
+    line-height: 1.5;
+  }
+  button {
+    width: 100%;
+    margin-top: 10px;
+    background: #238636;
+    border: 1px solid #2ea043;
+    color: white;
+    padding: 9px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: #2ea043; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .ah-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid #2d333b;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Lüftungsrechner</h1>
+  <div class="sub">Sagt dir, ob Lüften die Luftfeuchtigkeit drinnen senkt oder erhöht</div>
+
+  <div class="col" style="margin-bottom:16px;">
+    <h2>📍 Wetterdaten laden</h2>
+    <label>Ort oder PLZ</label>
+    <input type="text" id="place" value="21217 Meckelfeld">
+    <button id="loadWeather" type="button">Wetter für Außen laden</button>
+    <button id="useLocation" type="button" style="background:#1f6feb;border-color:#388bfd;">📍 Meinen Standort verwenden</button>
+    <div class="detail" id="weatherStatus" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="columns">
+    <div class="col">
+      <h2>🏠 Innen</h2>
+      <label>Temperatur (°C)</label>
+      <input type="number" id="tIn" value="21" step="0.1">
+      <label>Luftfeuchtigkeit (%)</label>
+      <input type="number" id="rhIn" value="60" step="1" min="0" max="100">
+    </div>
+    <div class="col">
+      <h2>🌳 Außen</h2>
+      <label>Temperatur (°C)</label>
+      <input type="number" id="tOut" value="10" step="0.1">
+      <label>Luftfeuchtigkeit (%)</label>
+      <input type="number" id="rhOut" value="80" step="1" min="0" max="100">
+    </div>
+  </div>
+
+  <div class="result">
+    <div class="verdict" id="verdict">–</div>
+    <div class="detail" id="detail">Werte eingeben…</div>
+    <div class="ah-row">
+      <span id="ahInTxt"></span>
+      <span id="ahOutTxt"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+function satVaporPressure(t) {
+  // Magnus-Formel, hPa
+  return 6.112 * Math.exp((17.62 * t) / (243.12 + t));
+}
+function absHumidity(t, rh) {
+  const es = satVaporPressure(t);
+  const e = es * (rh / 100);
+  return (216.7 * e) / (t + 273.15); // g/m³
+}
+function relHumidityFromAbs(t, ah) {
+  const es = satVaporPressure(t);
+  const e = (ah * (t + 273.15)) / 216.7;
+  return (e / es) * 100;
+}
+
+function calc() {
+  const tIn = parseFloat(document.getElementById('tIn').value);
+  const rhIn = parseFloat(document.getElementById('rhIn').value);
+  const tOut = parseFloat(document.getElementById('tOut').value);
+  const rhOut = parseFloat(document.getElementById('rhOut').value);
+
+  const verdictEl = document.getElementById('verdict');
+  const detailEl = document.getElementById('detail');
+  const ahInTxt = document.getElementById('ahInTxt');
+  const ahOutTxt = document.getElementById('ahOutTxt');
+
+  if ([tIn, rhIn, tOut, rhOut].some(v => isNaN(v))) {
+    verdictEl.textContent = '–';
+    detailEl.textContent = 'Bitte alle Werte ausfüllen.';
+    ahInTxt.textContent = '';
+    ahOutTxt.textContent = '';
+    return;
+  }
+
+  const ahIn = absHumidity(tIn, rhIn);
+  const ahOut = absHumidity(tOut, rhOut);
+
+  ahInTxt.textContent = `Innen: ${ahIn.toFixed(2)} g/m³`;
+  ahOutTxt.textContent = `Außen: ${ahOut.toFixed(2)} g/m³`;
+
+  const diff = ahOut - ahIn; // negativ = Außenluft trockener
+
+  // Angenommen: nach dem Lüften nimmt die Raumluft die absolute
+  // Feuchte der Außenluft an, erwärmt sich aber wieder auf tIn.
+  const newRhIn = relHumidityFromAbs(tIn, ahOut);
+  const rhDiff = newRhIn - rhIn;
+
+  if (Math.abs(diff) < 0.15) {
+    verdictEl.className = 'verdict neutral';
+    verdictEl.textContent = '≈ Kaum ein Unterschied';
+    detailEl.textContent = `Lüften würde die Feuchtigkeit drinnen kaum verändern (ca. ${rhDiff >= 0 ? '+' : ''}${rhDiff.toFixed(1)} %-Punkte).`;
+  } else if (diff < 0) {
+    verdictEl.className = 'verdict good';
+    verdictEl.textContent = '✅ Lüften senkt die Feuchtigkeit';
+    detailEl.textContent = `Die Außenluft enthält weniger Wasserdampf. Nach dem Lüften (und Wiedererwärmen auf ${tIn.toFixed(1)} °C) sinkt die Luftfeuchtigkeit drinnen voraussichtlich von ${rhIn.toFixed(0)} % auf ca. ${newRhIn.toFixed(0)} % (${rhDiff.toFixed(1)} %-Punkte).`;
+  } else {
+    verdictEl.className = 'verdict bad';
+    verdictEl.textContent = '⚠️ Lüften erhöht die Feuchtigkeit';
+    detailEl.textContent = `Die Außenluft enthält mehr Wasserdampf als die Innenluft. Lüften würde die Feuchtigkeit drinnen eher von ${rhIn.toFixed(0)} % auf ca. ${newRhIn.toFixed(0)} % erhöhen (+${rhDiff.toFixed(1)} %-Punkte). Besser warten oder kürzer/seltener lüften.`;
+  }
+}
+
+document.querySelectorAll('input').forEach(el => el.addEventListener('input', calc));
+
+async function fetchWeatherForCoords(lat, lon, label) {
+  const status = document.getElementById('weatherStatus');
+  const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m`);
+  if (!wRes.ok) throw new Error(`Wetter-API-Fehler: HTTP ${wRes.status}`);
+  const wData = await wRes.json();
+
+  if (!wData.current) {
+    status.textContent = 'Wetterdaten konnten nicht geladen werden (keine "current"-Daten in der Antwort).';
+    return;
+  }
+
+  document.getElementById('tOut').value = wData.current.temperature_2m.toFixed(1);
+  document.getElementById('rhOut').value = Math.round(wData.current.relative_humidity_2m);
+
+  status.textContent = `✓ ${label}: ${wData.current.temperature_2m.toFixed(1)} °C, ${Math.round(wData.current.relative_humidity_2m)} % (Stand: ${new Date(wData.current.time).toLocaleString('de-DE')})`;
+  calc();
+}
+
+async function loadWeather() {
+  const btn = document.getElementById('loadWeather');
+  const status = document.getElementById('weatherStatus');
+  const place = document.getElementById('place').value.trim();
+  if (!place) return;
+
+  btn.disabled = true;
+  status.textContent = 'Suche Ort…';
+
+  try {
+    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=de&addressdetails=1&limit=1&q=${encodeURIComponent(place)}`);
+    if (!geoRes.ok) throw new Error(`Geocoding-Fehler: HTTP ${geoRes.status}`);
+    const geoResults = await geoRes.json();
+
+    if (!geoResults || geoResults.length === 0) {
+      status.textContent = 'Ort nicht gefunden. Bitte anderen Namen/PLZ versuchen (nur deutsche Orte).';
+      btn.disabled = false;
+      return;
+    }
+
+    const loc = geoResults[0];
+    const a = loc.address || {};
+    const locLabel = a.city || a.town || a.village || a.suburb || a.municipality || loc.display_name.split(',')[0];
+    status.textContent = `Lade Wetter für ${locLabel}…`;
+
+    await fetchWeatherForCoords(loc.lat, loc.lon, locLabel);
+  } catch (err) {
+    status.textContent = 'Fehler beim Laden der Wetterdaten: ' + (err && err.message ? err.message : String(err));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function useMyLocation() {
+  const btn = document.getElementById('useLocation');
+  const status = document.getElementById('weatherStatus');
+
+  if (!navigator.geolocation) {
+    status.textContent = 'Geolokalisierung wird von diesem Browser nicht unterstützt.';
+    return;
+  }
+
+  btn.disabled = true;
+  status.textContent = 'Ermittle deinen Standort…';
+
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude, longitude } = pos.coords;
+    try {
+      status.textContent = 'Lade Wetter für deinen Standort…';
+      let label = `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
+      try {
+        const revRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`);
+        if (revRes.ok) {
+          const revData = await revRes.json();
+          const a = revData.address || {};
+          const niceLabel = a.city || a.town || a.village || a.suburb || a.municipality;
+          if (niceLabel) {
+            label = niceLabel;
+            document.getElementById('place').value = `${a.postcode ? a.postcode + ' ' : ''}${niceLabel}`;
+          }
+        }
+      } catch (e) { /* Reverse-Geocoding optional, Wetter trotzdem laden */ }
+
+      await fetchWeatherForCoords(latitude, longitude, label);
+    } catch (err) {
+      status.textContent = 'Fehler beim Laden der Wetterdaten: ' + (err && err.message ? err.message : String(err));
+    } finally {
+      btn.disabled = false;
+    }
+  }, (err) => {
+    status.textContent = 'Standort konnte nicht ermittelt werden: ' + err.message + ' (Browser-Berechtigung erteilt?)';
+    btn.disabled = false;
+  });
+}
+
+document.getElementById('loadWeather').addEventListener('click', loadWeather);
+document.getElementById('useLocation').addEventListener('click', useMyLocation);
+calc();
+loadWeather();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
