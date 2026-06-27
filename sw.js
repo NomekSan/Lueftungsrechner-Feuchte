@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lueftungsrechner-v2';
+const CACHE_NAME = 'lueftungsrechner-v3';
 const FILES_TO_CACHE = [
   './lueftungsrechner.html',
   './manifest.json',
