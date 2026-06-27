@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Lüftungsrechner</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0f1419">
@@ -116,6 +116,35 @@
     padding-top: 10px;
     border-top: 1px solid #2d333b;
   }
+  .endresult {
+    background: #161b22;
+    border: 1px solid #2d333b;
+    border-radius: 12px;
+    padding: 14px;
+    margin-top: 12px;
+  }
+  .endrow {
+    display: flex;
+    gap: 8px;
+  }
+  .endcol {
+    flex: 1;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 6px;
+    text-align: center;
+  }
+  .endlabel {
+    font-size: 11px;
+    color: #8b949e;
+    margin-bottom: 6px;
+  }
+  .endval {
+    font-size: 17px;
+    font-weight: 600;
+    color: #e6edf3;
+  }
 </style>
 </head>
 <body>
@@ -157,6 +186,24 @@
       <span id="ahOutTxt"></span>
     </div>
   </div>
+
+  <div class="endresult" id="endresult" style="display:none;">
+    <div style="font-size:12px;color:#8b949e;margin-bottom:8px;">Nach dem Lüften (Raum wieder auf Ausgangstemperatur):</div>
+    <div class="endrow">
+      <div class="endcol">
+        <div class="endlabel">🌡 Temperatur</div>
+        <div class="endval" id="endTemp">–</div>
+      </div>
+      <div class="endcol">
+        <div class="endlabel">💧 Luftfeuchtigkeit</div>
+        <div class="endval" id="endRh">–</div>
+      </div>
+      <div class="endcol">
+        <div class="endlabel">Δ Feuchtigkeit</div>
+        <div class="endval" id="endDelta">–</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -191,6 +238,7 @@ function calc() {
     detailEl.textContent = 'Bitte alle Werte ausfüllen.';
     ahInTxt.textContent = '';
     ahOutTxt.textContent = '';
+    document.getElementById('endresult').style.display = 'none';
     return;
   }
 
@@ -200,12 +248,18 @@ function calc() {
   ahInTxt.textContent = `Innen: ${ahIn.toFixed(2)} g/m³`;
   ahOutTxt.textContent = `Außen: ${ahOut.toFixed(2)} g/m³`;
 
-  const diff = ahOut - ahIn; // negativ = Außenluft trockener
-
-  // Angenommen: nach dem Lüften nimmt die Raumluft die absolute
-  // Feuchte der Außenluft an, erwärmt sich aber wieder auf tIn.
+  const diff = ahOut - ahIn;
   const newRhIn = relHumidityFromAbs(tIn, ahOut);
   const rhDiff = newRhIn - rhIn;
+
+  // Endwerte anzeigen
+  document.getElementById('endresult').style.display = 'block';
+  document.getElementById('endTemp').textContent = `${tIn.toFixed(1)} °C`;
+  document.getElementById('endRh').textContent = `${Math.round(newRhIn)} %`;
+  const deltaEl = document.getElementById('endDelta');
+  const sign = rhDiff >= 0 ? '+' : '';
+  deltaEl.textContent = `${sign}${rhDiff.toFixed(1)} %`;
+  deltaEl.style.color = Math.abs(rhDiff) < 1 ? '#d29922' : rhDiff < 0 ? '#3fb950' : '#f85149';
 
   if (Math.abs(diff) < 0.15) {
     verdictEl.className = 'verdict neutral';
