@@ -178,6 +178,16 @@
     </div>
   </div>
 
+  <div class="col" style="margin-bottom:16px;">
+    <h2>🪟 Lüftungsintensität</h2>
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:#8b949e;margin-bottom:4px;">
+      <span>Kurz stoßlüften</span>
+      <span>Komplett durchlüften</span>
+    </div>
+    <input type="range" id="mixRatio" min="0" max="100" value="50" style="width:100%;accent-color:#58a6ff;cursor:pointer;">
+    <div style="text-align:center;font-size:13px;color:#79c0ff;margin-top:4px;" id="mixLabel">50 % Außenluftanteil</div>
+  </div>
+
   <div class="result">
     <div class="verdict" id="verdict">–</div>
     <div class="detail" id="detail">Werte eingeben…</div>
@@ -188,7 +198,7 @@
   </div>
 
   <div class="endresult" id="endresult" style="display:none;">
-    <div style="font-size:12px;color:#8b949e;margin-bottom:8px;">Nach dem Lüften (Raum wieder auf Ausgangstemperatur):</div>
+    <div style="font-size:12px;color:#8b949e;margin-bottom:8px;" id="endLabel">Nach dem Lüften (Mischzustand):</div>
     <div class="endrow">
       <div class="endcol">
         <div class="endlabel">🌡 Temperatur</div>
@@ -208,13 +218,12 @@
 
 <script>
 function satVaporPressure(t) {
-  // Magnus-Formel, hPa
   return 6.112 * Math.exp((17.62 * t) / (243.12 + t));
 }
 function absHumidity(t, rh) {
   const es = satVaporPressure(t);
   const e = es * (rh / 100);
-  return (216.7 * e) / (t + 273.15); // g/m³
+  return (216.7 * e) / (t + 273.15);
 }
 function relHumidityFromAbs(t, ah) {
   const es = satVaporPressure(t);
@@ -223,56 +232,65 @@ function relHumidityFromAbs(t, ah) {
 }
 
 function calc() {
-  const tIn = parseFloat(document.getElementById('tIn').value);
-  const rhIn = parseFloat(document.getElementById('rhIn').value);
-  const tOut = parseFloat(document.getElementById('tOut').value);
-  const rhOut = parseFloat(document.getElementById('rhOut').value);
+  const tIn    = parseFloat(document.getElementById('tIn').value);
+  const rhIn   = parseFloat(document.getElementById('rhIn').value);
+  const tOut   = parseFloat(document.getElementById('tOut').value);
+  const rhOut  = parseFloat(document.getElementById('rhOut').value);
+  const alpha  = parseFloat(document.getElementById('mixRatio').value) / 100; // 0..1
+
+  document.getElementById('mixLabel').textContent = `${Math.round(alpha * 100)} % Außenluftanteil`;
 
   const verdictEl = document.getElementById('verdict');
-  const detailEl = document.getElementById('detail');
-  const ahInTxt = document.getElementById('ahInTxt');
-  const ahOutTxt = document.getElementById('ahOutTxt');
+  const detailEl  = document.getElementById('detail');
+  const ahInTxt   = document.getElementById('ahInTxt');
+  const ahOutTxt  = document.getElementById('ahOutTxt');
 
   if ([tIn, rhIn, tOut, rhOut].some(v => isNaN(v))) {
     verdictEl.textContent = '–';
-    detailEl.textContent = 'Bitte alle Werte ausfüllen.';
-    ahInTxt.textContent = '';
-    ahOutTxt.textContent = '';
+    detailEl.textContent  = 'Bitte alle Werte ausfüllen.';
+    ahInTxt.textContent   = '';
+    ahOutTxt.textContent  = '';
     document.getElementById('endresult').style.display = 'none';
     return;
   }
 
-  const ahIn = absHumidity(tIn, rhIn);
+  const ahIn  = absHumidity(tIn, rhIn);
   const ahOut = absHumidity(tOut, rhOut);
 
   ahInTxt.textContent = `Innen: ${ahIn.toFixed(2)} g/m³`;
   ahOutTxt.textContent = `Außen: ${ahOut.toFixed(2)} g/m³`;
 
+  // Mischzustand: Energie- und Massenerhaltung
+  const tMix  = (1 - alpha) * tIn  + alpha * tOut;   // °C
+  const ahMix = (1 - alpha) * ahIn + alpha * ahOut;   // g/m³
+  const rhMix = relHumidityFromAbs(tMix, ahMix);
+  const rhDiff = rhMix - rhIn;
+
+  // Entscheidungsgrundlage: absolute Feuchte der Außenluft vs. Innenluft
   const diff = ahOut - ahIn;
-  const newRhIn = relHumidityFromAbs(tIn, ahOut);
-  const rhDiff = newRhIn - rhIn;
 
   // Endwerte anzeigen
   document.getElementById('endresult').style.display = 'block';
-  document.getElementById('endTemp').textContent = `${tIn.toFixed(1)} °C`;
-  document.getElementById('endRh').textContent = `${Math.round(newRhIn)} %`;
+  document.getElementById('endLabel').textContent = `Nach dem Lüften (${Math.round(alpha*100)} % Außenluft gemischt):`;
+  document.getElementById('endTemp').textContent = `${tMix.toFixed(1)} °C`;
+  document.getElementById('endRh').textContent   = `${Math.round(rhMix)} %`;
   const deltaEl = document.getElementById('endDelta');
   const sign = rhDiff >= 0 ? '+' : '';
-  deltaEl.textContent = `${sign}${rhDiff.toFixed(1)} %`;
-  deltaEl.style.color = Math.abs(rhDiff) < 1 ? '#d29922' : rhDiff < 0 ? '#3fb950' : '#f85149';
+  deltaEl.textContent   = `${sign}${rhDiff.toFixed(1)} %`;
+  deltaEl.style.color   = Math.abs(rhDiff) < 0.5 ? '#d29922' : rhDiff < 0 ? '#3fb950' : '#f85149';
 
   if (Math.abs(diff) < 0.15) {
-    verdictEl.className = 'verdict neutral';
+    verdictEl.className  = 'verdict neutral';
     verdictEl.textContent = '≈ Kaum ein Unterschied';
-    detailEl.textContent = `Lüften würde die Feuchtigkeit drinnen kaum verändern (ca. ${rhDiff >= 0 ? '+' : ''}${rhDiff.toFixed(1)} %-Punkte).`;
+    detailEl.textContent = `Lüften würde die Feuchtigkeit drinnen kaum verändern (${sign}${rhDiff.toFixed(1)} %-Punkte bei ${Math.round(alpha*100)} % Luftaustausch).`;
   } else if (diff < 0) {
-    verdictEl.className = 'verdict good';
+    verdictEl.className  = 'verdict good';
     verdictEl.textContent = '✅ Lüften senkt die Feuchtigkeit';
-    detailEl.textContent = `Die Außenluft enthält weniger Wasserdampf. Nach dem Lüften (und Wiedererwärmen auf ${tIn.toFixed(1)} °C) sinkt die Luftfeuchtigkeit drinnen voraussichtlich von ${rhIn.toFixed(0)} % auf ca. ${newRhIn.toFixed(0)} % (${rhDiff.toFixed(1)} %-Punkte).`;
+    detailEl.textContent = `Die Außenluft enthält weniger Wasserdampf. Im Mischzustand (${Math.round(alpha*100)} % Außenluft) sinkt die Raumfeuchte von ${rhIn.toFixed(0)} % auf ca. ${Math.round(rhMix)} % bei ${tMix.toFixed(1)} °C.`;
   } else {
-    verdictEl.className = 'verdict bad';
+    verdictEl.className  = 'verdict bad';
     verdictEl.textContent = '⚠️ Lüften erhöht die Feuchtigkeit';
-    detailEl.textContent = `Die Außenluft enthält mehr Wasserdampf als die Innenluft. Lüften würde die Feuchtigkeit drinnen eher von ${rhIn.toFixed(0)} % auf ca. ${newRhIn.toFixed(0)} % erhöhen (+${rhDiff.toFixed(1)} %-Punkte). Besser warten oder kürzer/seltener lüften.`;
+    detailEl.textContent = `Die Außenluft enthält mehr Wasserdampf. Im Mischzustand (${Math.round(alpha*100)} % Außenluft) steigt die Raumfeuchte von ${rhIn.toFixed(0)} % auf ca. ${Math.round(rhMix)} % bei ${tMix.toFixed(1)} °C.`;
   }
 }
 
